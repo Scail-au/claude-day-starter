@@ -1,0 +1,487 @@
+<title>My To-Do List</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a coloured header band (date, title, count), then one narrow column: the add box, the open list (oldest first), finished items folded away, and the colour picker at the foot. */
+/* Colours: neutrals are fixed; the band and accent come from the chosen palette, which the script writes into the --t-* variables. */
+:root {
+  --bg: #F2F4F6; --surface: #FFFFFF; --ink: #1B2430; --muted: #5B6470;
+  --line: #DCE1E7; --field: #F7F8FA; --tick-line: #A3ADB9; --chip: #EEF1F4;
+  --ok: #1E6B3A; --on-ok: #FFFFFF;
+  --warn-bg: #FBEDE3; --warn-ink: #8A3A12;
+  --band: var(--t-band-l, #1A3E5D); --on-band: var(--t-on-band-l, #FFFFFF);
+  --accent: var(--t-accent-l, #1875C8); --accent-ink: var(--t-accent-ink-l, #FFFFFF);
+  --font: "Segoe UI", -apple-system, BlinkMacSystemFont, Calibri, "Helvetica Neue", Arial, sans-serif;
+  --mono: Consolas, "SF Mono", Menlo, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121519; --surface: #1B1F24; --ink: #E7EAEE; --muted: #A3ACB8;
+  --line: #2C323A; --field: #15191D; --tick-line: #5D6773; --chip: #252B32;
+  --ok: #7AD19A; --on-ok: #0F1A12;
+  --warn-bg: #4A2A14; --warn-ink: #FFD2B3;
+  --band: var(--t-band-d, #1A3E5D); --on-band: var(--t-on-band-d, #FFFFFF);
+  --accent: var(--t-accent-d, #5AA9EE); --accent-ink: var(--t-accent-ink-d, #111111); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121519; --surface: #1B1F24; --ink: #E7EAEE; --muted: #A3ACB8;
+  --line: #2C323A; --field: #15191D; --tick-line: #5D6773; --chip: #252B32;
+  --ok: #7AD19A; --on-ok: #0F1A12;
+  --warn-bg: #4A2A14; --warn-ink: #FFD2B3;
+  --band: var(--t-band-d, #1A3E5D); --on-band: var(--t-on-band-d, #FFFFFF);
+  --accent: var(--t-accent-d, #5AA9EE); --accent-ink: var(--t-accent-ink-d, #111111); color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.45; }
+.band { background: var(--band); color: var(--on-band); }
+.band-inner, .wrap { max-width: 640px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.band-inner { padding-block: 22px 20px; display: flex; flex-direction: column; gap: 4px; }
+.wrap { padding-block: 20px 96px; display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { margin: 0; font-size: .78rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-band); opacity: .85; font-variant-numeric: tabular-nums; }
+h1 { margin: 0; font-size: 1.9rem; line-height: 1.15; color: var(--on-band); text-wrap: balance; }
+.summary { margin: 0; color: var(--on-band); opacity: .85; font-variant-numeric: tabular-nums; min-height: 1.45em; }
+
+.notice { margin: 0; background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 10px 14px; }
+
+.add { display: flex; gap: 8px; }
+.add input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; }
+.add input::placeholder { color: var(--muted); }
+.add button { flex: none; font: inherit; font-weight: 700; color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 8px; padding: 0 18px; cursor: pointer; }
+.add input:disabled, .add button:disabled { opacity: .55; cursor: not-allowed; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.list { list-style: none; margin: 0; padding: 0; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; gap: 12px; padding: 12px 10px 12px 14px; border-top: 1px solid var(--line); }
+.list > .item:first-child { border-top: 0; }
+.tickbox { position: relative; width: 26px; height: 26px; }
+.tick { appearance: none; -webkit-appearance: none; display: block; margin: 0; width: 26px; height: 26px; border: 2px solid var(--tick-line); border-radius: 7px; background: var(--field); cursor: pointer; }
+.tick:hover { border-color: var(--accent); }
+.tick:checked { background: var(--ok); border-color: var(--ok); }
+.tick:disabled { cursor: not-allowed; }
+.check { position: absolute; inset: 0; width: 26px; height: 26px; padding: 4px; fill: none; stroke: var(--on-ok); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; opacity: 0; }
+.tick:checked + .check { opacity: 1; }
+.text { min-width: 0; overflow-wrap: anywhere; padding-top: 2px; cursor: pointer; }
+.is-done .text { color: var(--muted); text-decoration: line-through; }
+.age { font: 600 .76rem/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 5px 8px; margin-top: 3px; white-space: nowrap; }
+.age.is-old { background: var(--warn-bg); color: var(--warn-ink); }
+.age:empty { display: none; }
+.remove { width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); background: transparent; border: 0; border-radius: 6px; cursor: pointer; margin-top: -3px; }
+.remove svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.remove:hover { background: var(--chip); color: var(--ink); }
+.remove:disabled { visibility: hidden; }
+
+.state { margin: 0; padding: 22px 16px; text-align: center; color: var(--muted); }
+
+details.done > summary { cursor: pointer; padding: 12px 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+details.done[open] > summary { border-bottom: 1px solid var(--line); }
+.done .item { padding-block: 9px; }
+.clear-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px 12px; border-top: 1px solid var(--line); color: var(--muted); }
+.btn-quiet { font: inherit; font-size: .92rem; font-weight: 600; color: var(--ink); background: var(--chip); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn-warn { background: var(--warn-bg); color: var(--warn-ink); }
+
+.foot { display: flex; flex-direction: column; gap: 12px; }
+.colours { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.colours-label { font-size: .9rem; font-weight: 700; color: var(--muted); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: .88rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px 4px 5px; cursor: pointer; }
+.swatch .dot { width: 20px; height: 20px; border-radius: 50%; flex: none; }
+.swatch[aria-checked="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 700; }
+.hint { margin: 0; color: var(--muted); font-size: .9rem; }
+.hint code { font-family: var(--mono); font-size: .88em; color: var(--ink); background: var(--chip); border-radius: 4px; padding: 1px 5px; }
+
+.toast { position: fixed; left: 0; right: 0; bottom: 0; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: center; pointer-events: none; }
+.toast-inner { pointer-events: auto; max-width: 560px; display: flex; align-items: center; gap: 14px; background: var(--ink); color: var(--bg); border-radius: 8px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, .18); }
+.toast-inner span { min-width: 0; overflow-wrap: anywhere; }
+.toast-inner button { flex: none; font: inherit; font-weight: 700; color: var(--bg); background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+.add input:focus-visible, button:focus-visible, .tick:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .tick, .check, .remove, .swatch { transition: background-color .12s, border-color .12s, opacity .12s; } }
+@media (max-width: 420px) { .item { gap: 10px; padding-left: 12px; } h1 { font-size: 1.65rem; } }
+</style>
+
+<header class="band">
+  <div class="band-inner">
+    <p class="eyebrow" id="today"></p>
+    <h1>To-Do</h1>
+    <p class="summary" id="summary" aria-live="polite"></p>
+  </div>
+</header>
+
+<div class="wrap">
+  <p class="notice" id="notice" hidden></p>
+
+  <form class="add" id="add-form" autocomplete="off">
+    <input id="new-item" type="text" maxlength="500" placeholder="Add a to-do" aria-label="New to-do" enterkeyhint="done">
+    <button id="add-btn" type="submit">Add</button>
+  </form>
+
+  <div class="card">
+    <ul class="list" id="open-list"></ul>
+    <p class="state" id="loading">Loading your list…</p>
+    <p class="state" id="empty" hidden>Nothing on your list. Add a to-do above, or type <b>/todo</b> and the task in any Claude chat.</p>
+  </div>
+
+  <details class="card done" id="done-earlier" hidden>
+    <summary>Done earlier (<span id="done-count">0</span>)</summary>
+    <ul class="list" id="done-list"></ul>
+    <div class="clear-row">
+      <button type="button" class="btn-quiet" id="clear-done">Clear done items</button>
+      <span id="clear-confirm" hidden>Remove all <span id="clear-n">0</span> for good? <button type="button" class="btn-quiet btn-warn" id="clear-yes">Yes, clear</button> <button type="button" class="btn-quiet" id="clear-no">Cancel</button></span>
+    </div>
+  </details>
+
+  <div class="foot">
+    <div class="colours" id="colours" hidden>
+      <span class="colours-label" id="colours-label">Colours</span>
+      <div class="swatches" id="swatches" role="radiogroup" aria-labelledby="colours-label"></div>
+    </div>
+    <p class="hint">Add from any Claude chat: type <code>/todo</code> and the task, for example <code>/todo call the bank</code>. Ticked items stay greyed until midnight, then move to Done earlier.</p>
+    <p class="hint" id="company-hint" hidden>To use your company's colours, type <code>/todo colours</code> in a Claude chat.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"><div class="toast-inner"><span id="toast-text"></span><button type="button" id="toast-undo" hidden>Undo</button></div></div>
+
+<script>
+(function () {
+  "use strict";
+  var COLLECTION = "todos";
+  var THEME_DOC = "settings/theme";
+  var MAX_LEN = 500;
+  var CHECK = '<svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>';
+  var CROSS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
+  function $(id) { return document.getElementById(id); }
+  var els = {
+    today: $("today"), summary: $("summary"), notice: $("notice"),
+    form: $("add-form"), input: $("new-item"), addBtn: $("add-btn"),
+    list: $("open-list"), loading: $("loading"), empty: $("empty"),
+    doneWrap: $("done-earlier"), doneCount: $("done-count"), doneList: $("done-list"),
+    clearBtn: $("clear-done"), clearConfirm: $("clear-confirm"), clearN: $("clear-n"),
+    clearYes: $("clear-yes"), clearNo: $("clear-no"),
+    colours: $("colours"), swatches: $("swatches"), companyHint: $("company-hint"),
+    toast: $("toast"), toastText: $("toast-text"), toastUndo: $("toast-undo")
+  };
+  var state = { items: [], col: null, writable: true, loaded: false, busy: {}, earlier: [], themeRef: null, theme: null, themeBusy: false };
+
+  /* ---------- Colours ---------- */
+  /* Each palette sets only the header band and the accent; dark mode gets its own tuned pair. */
+  var PRESETS = {
+    navy:     { name: "Navy",     light: { band: "#1A3E5D", accent: "#1875C8" }, dark: { band: "#1A3E5D", accent: "#5AA9EE" } },
+    charcoal: { name: "Charcoal", light: { band: "#2B2F33", accent: "#B4540A" }, dark: { band: "#2B2F33", accent: "#F0954A" } },
+    forest:   { name: "Forest",   light: { band: "#1F3D2B", accent: "#2E7D4F" }, dark: { band: "#24452F", accent: "#6CC08E" } },
+    plum:     { name: "Plum",     light: { band: "#3D2350", accent: "#7A3E9D" }, dark: { band: "#432757", accent: "#C08BE0" } }
+  };
+  var LIGHT_SURFACE = "#FFFFFF", DARK_SURFACE = "#1B1F24";
+
+  function isHex(h) { return typeof h === "string" && /^#[0-9a-fA-F]{6}$/.test(h); }
+  function rgb(h) { return [1, 3, 5].map(function (i) { return parseInt(h.slice(i, i + 2), 16); }); }
+  function toHex(c) { return "#" + c.map(function (v) { var n = Math.max(0, Math.min(255, Math.round(v))); return (n < 16 ? "0" : "") + n.toString(16); }).join(""); }
+  function lum(h) {
+    var c = rgb(h).map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function contrast(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function mix(a, b, t) { var p = rgb(a), q = rgb(b); return toHex(p.map(function (v, i) { return v + (q[i] - v) * t; })); }
+  function inkFor(bg) { return contrast("#FFFFFF", bg) >= contrast("#111111", bg) ? "#FFFFFF" : "#111111"; }
+  /* Nudge a brand colour toward black or white until it stands out from the page surface. */
+  function legible(c, toward, surface) {
+    var out = c;
+    for (var t = 0.05; t <= 1 && contrast(out, surface) < 3; t += 0.05) out = mix(c, toward, t);
+    return out;
+  }
+  function companyOf(setting) {
+    var c = setting && setting.company;
+    return c && isHex(c.band) && isHex(c.accent) ? c : null;
+  }
+  function paletteFor(setting) {
+    var p = setting && setting.preset;
+    var company = companyOf(setting);
+    if (p === "company" && company) {
+      return {
+        light: { band: company.band, accent: legible(company.accent, "#000000", LIGHT_SURFACE) },
+        dark: { band: company.band, accent: legible(company.accent, "#FFFFFF", DARK_SURFACE) }
+      };
+    }
+    return PRESETS[p] || PRESETS.navy;
+  }
+  function applyPalette(pal) {
+    var s = document.documentElement.style;
+    s.setProperty("--t-band-l", pal.light.band); s.setProperty("--t-on-band-l", inkFor(pal.light.band));
+    s.setProperty("--t-accent-l", pal.light.accent); s.setProperty("--t-accent-ink-l", inkFor(pal.light.accent));
+    s.setProperty("--t-band-d", pal.dark.band); s.setProperty("--t-on-band-d", inkFor(pal.dark.band));
+    s.setProperty("--t-accent-d", pal.dark.accent); s.setProperty("--t-accent-ink-d", inkFor(pal.dark.accent));
+  }
+  function applySetting(setting) {
+    var pal = paletteFor(setting);
+    applyPalette(pal);
+    try { localStorage.setItem("todo-palette", JSON.stringify(pal)); } catch (e) {}
+  }
+  /* Repaint the last palette straight away, so the page doesn't flash Navy while the list loads. */
+  try {
+    var cached = JSON.parse(localStorage.getItem("todo-palette") || "null");
+    if (cached && cached.light && isHex(cached.light.band) && isHex(cached.light.accent) && cached.dark && isHex(cached.dark.band) && isHex(cached.dark.accent)) applyPalette(cached);
+  } catch (e) {}
+
+  function currentPreset() {
+    var p = state.theme && state.theme.preset;
+    if (p === "company" && companyOf(state.theme)) return "company";
+    return PRESETS[p] ? p : "navy";
+  }
+  function swatch(id, name, pal) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch";
+    b.id = "sw-" + id;
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(currentPreset() === id));
+    var dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "linear-gradient(135deg, " + pal.light.band + " 50%, " + pal.light.accent + " 50%)";
+    b.appendChild(dot);
+    b.appendChild(document.createTextNode(name));
+    b.addEventListener("click", function () { choosePreset(id); });
+    return b;
+  }
+  function renderSwatches() {
+    if (!state.themeRef || !state.writable) { els.colours.hidden = true; els.companyHint.hidden = true; return; }
+    var focusId = document.activeElement && document.activeElement.id;
+    var nodes = Object.keys(PRESETS).map(function (id) { return swatch(id, PRESETS[id].name, PRESETS[id]); });
+    var company = companyOf(state.theme);
+    if (company) nodes.push(swatch("company", "Company", paletteFor({ preset: "company", company: company })));
+    els.swatches.replaceChildren.apply(els.swatches, nodes);
+    els.colours.hidden = false;
+    els.companyHint.hidden = !!company;
+    if (focusId) { var f = document.getElementById(focusId); if (f && f !== document.activeElement) f.focus(); }
+  }
+  function choosePreset(id) {
+    if (!state.themeRef || state.themeBusy || currentPreset() === id) return;
+    state.themeBusy = true;
+    var before = state.theme;
+    var body = { preset: id };
+    var company = companyOf(before);
+    if (company) body.company = { band: company.band, accent: company.accent, source: typeof company.source === "string" ? company.source : "" };
+    state.theme = body;
+    applySetting(body);
+    renderSwatches();
+    state.themeRef.set(body)
+      .catch(function (e) { state.theme = before; applySetting(before); renderSwatches(); say(problem(e)); })
+      .then(function () { state.themeBusy = false; });
+  }
+
+  /* ---------- Dates: humans see DD/MM/YYYY in the viewer's own time zone ---------- */
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parse(v) { if (typeof v !== "string") return null; var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+  function dmy(d) { return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(); }
+  function dm(d) { return pad(d.getDate()) + "/" + pad(d.getMonth() + 1); }
+  function daysOpen(d) {
+    var a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var n = new Date(); var b = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.max(0, Math.round((b - a) / 86400000));
+  }
+  function paintDate() {
+    var now = new Date(), wd = "";
+    try { wd = now.toLocaleDateString("en-AU", { weekday: "long" }) + " "; } catch (e) {}
+    els.today.textContent = wd + dmy(now);
+  }
+  function clip(t) { return t.length > 48 ? t.slice(0, 47) + "…" : t; }
+
+  function problem(e) {
+    var code = e && e.code;
+    if (code === "quota_exceeded") return "Your list is full. Clear some done items, then try again.";
+    if (code === "invalid_argument" || code === "not_granted") return "That change was refused. Only the owner of this list can change it.";
+    if (code === "revoked") return "This page lost access to your list. Reload to try again.";
+    if (code === "resource_exhausted") return "Too many changes at once. Wait a moment, then try again.";
+    return "Couldn't save that change. Check your connection and try again.";
+  }
+
+  var toastTimer = null;
+  function say(text, undo) {
+    els.toastText.textContent = text;
+    els.toastUndo.hidden = !undo;
+    els.toastUndo.onclick = undo ? function () {
+      els.toast.hidden = true;
+      Promise.resolve().then(undo).catch(function (e) { say(problem(e)); });
+    } : null;
+    els.toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { els.toast.hidden = true; }, undo ? 7000 : 4500);
+  }
+  function showNotice(text) { els.notice.textContent = text; els.notice.hidden = false; }
+  function setWritable(w) { state.writable = w; els.input.disabled = !w; els.addBtn.disabled = !w; }
+
+  /* ---------- The list ---------- */
+  function normalise(doc) {
+    var b = doc.data() || {};
+    return {
+      id: doc.id,
+      text: typeof b.text === "string" ? b.text : "",
+      done: b.status === "done",
+      created: parse(b.created),
+      doneAt: parse(b.doneAt),
+      raw: b
+    };
+  }
+
+  function row(it, kind) {
+    var li = document.createElement("li");
+    li.className = "item" + (it.done ? " is-done" : "");
+
+    var box = document.createElement("span");
+    box.className = "tickbox";
+    box.innerHTML = '<input type="checkbox" class="tick">' + CHECK;
+    var cb = box.firstChild;
+    cb.id = "cb-" + it.id;
+    cb.checked = it.done;
+    cb.disabled = !state.writable;
+    cb.addEventListener("change", function () { toggle(it, cb.checked, cb); });
+
+    var label = document.createElement("label");
+    label.className = "text";
+    label.htmlFor = cb.id;
+    label.textContent = it.text || "(no text)";
+
+    var age = document.createElement("span");
+    age.className = "age";
+    if (kind === "open" && it.created) {
+      var n = daysOpen(it.created);
+      age.textContent = n === 0 ? "today" : n === 1 ? "1 day" : n + " days";
+      age.title = "Added " + dmy(it.created);
+      if (n >= 7) age.classList.add("is-old");
+    } else if (it.doneAt) {
+      age.textContent = kind === "today" ? "done" : dm(it.doneAt);
+      age.title = "Done " + dmy(it.doneAt);
+    }
+
+    var rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "remove";
+    rm.id = "rm-" + it.id;
+    rm.innerHTML = CROSS;
+    rm.setAttribute("aria-label", "Remove: " + (it.text || "item"));
+    rm.disabled = !state.writable;
+    rm.addEventListener("click", function () { removeItem(it); });
+
+    li.appendChild(box); li.appendChild(label); li.appendChild(age); li.appendChild(rm);
+    return li;
+  }
+
+  function byCreated(a, b) { return (a.created ? a.created.getTime() : 0) - (b.created ? b.created.getTime() : 0); }
+  function byDone(a, b) { return (a.doneAt ? a.doneAt.getTime() : 0) - (b.doneAt ? b.doneAt.getTime() : 0); }
+
+  function render() {
+    var tk = dayKey(new Date());
+    var open = [], today = [], earlier = [];
+    state.items.forEach(function (it) {
+      if (!it.done) open.push(it);
+      else if (it.doneAt && dayKey(it.doneAt) === tk) today.push(it);
+      else earlier.push(it);
+    });
+    open.sort(byCreated); today.sort(byDone); earlier.sort(function (a, b) { return byDone(b, a); });
+    state.earlier = earlier;
+
+    var focusId = document.activeElement && document.activeElement.id;
+    els.list.replaceChildren.apply(els.list, open.map(function (it) { return row(it, "open"); }).concat(today.map(function (it) { return row(it, "today"); })));
+    els.doneList.replaceChildren.apply(els.doneList, earlier.map(function (it) { return row(it, "earlier"); }));
+
+    els.loading.hidden = state.loaded;
+    els.empty.hidden = !state.loaded || open.length + today.length > 0;
+    els.summary.textContent = !state.loaded ? "" :
+      open.length === 0 && today.length ? "All done for today · " + today.length + " ticked off" :
+      open.length + " open" + (today.length ? " · " + today.length + " done today" : "");
+
+    els.doneWrap.hidden = earlier.length === 0;
+    els.doneCount.textContent = earlier.length;
+    els.clearN.textContent = earlier.length;
+    if (!earlier.length) hideClearConfirm();
+
+    if (focusId) { var f = document.getElementById(focusId); if (f && f !== document.activeElement) f.focus(); }
+  }
+
+  function toggle(it, done, cb) {
+    if (!state.col || state.busy[it.id]) { cb.checked = it.done; return; }
+    state.busy[it.id] = true;
+    var patch = done ? { status: "done", doneAt: new Date().toISOString() } : { status: "open", doneAt: null };
+    state.col.doc(it.id).update(patch)
+      .catch(function (e) { cb.checked = !done; say(problem(e)); })
+      .then(function () { delete state.busy[it.id]; });
+  }
+
+  function removeItem(it) {
+    if (!state.col || state.busy[it.id]) return;
+    state.busy[it.id] = true;
+    var ref = state.col.doc(it.id);
+    var body = Object.assign({}, it.raw);
+    ref.delete()
+      .then(function () { say("Removed: " + clip(it.text || "item"), function () { return ref.set(body); }); })
+      .catch(function (e) { say(problem(e)); })
+      .then(function () { delete state.busy[it.id]; });
+  }
+
+  function hideClearConfirm() { els.clearConfirm.hidden = true; els.clearBtn.hidden = false; }
+  els.clearBtn.addEventListener("click", function () { els.clearBtn.hidden = true; els.clearConfirm.hidden = false; els.clearNo.focus(); });
+  els.clearNo.addEventListener("click", function () { hideClearConfirm(); els.clearBtn.focus(); });
+  els.clearYes.addEventListener("click", async function () {
+    hideClearConfirm();
+    if (!state.col) return;
+    var targets = state.earlier.slice(), cleared = 0;
+    for (var i = 0; i < targets.length; i++) {
+      try { await state.col.doc(targets[i].id).delete(); cleared++; }
+      catch (e) { say(problem(e)); return; }
+    }
+    say("Cleared " + cleared + (cleared === 1 ? " done item." : " done items."));
+  });
+
+  els.form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var text = els.input.value.replace(/\s+/g, " ").trim().slice(0, MAX_LEN);
+    if (!text || !state.col) return;
+    els.input.value = "";
+    state.col.add({ text: text, status: "open", created: new Date().toISOString(), doneAt: null, source: "page" })
+      .catch(function (e) { els.input.value = text; say(problem(e)); });
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") { paintDate(); render(); }
+  });
+
+  async function boot() {
+    paintDate();
+    render();
+    var C = window.claude, db = null, user = null;
+    if (C && typeof C.use === "function") {
+      try { db = await C.use("db"); } catch (e) { db = null; }
+      try { user = await C.use("user"); } catch (e) { user = null; }
+    }
+    if (!db) {
+      setWritable(false);
+      state.loaded = true;
+      els.loading.hidden = true;
+      els.empty.hidden = true;
+      showNotice("Your list loads only inside Claude. Open this page from your Claude account to see and change it.");
+      return;
+    }
+    if (user) {
+      var owner = false;
+      try { owner = await user.isOwner(); } catch (e) {}
+      if (!owner) { setWritable(false); showNotice("This list is private to the person who owns it."); }
+    }
+    state.themeRef = db.doc(THEME_DOC);
+    state.themeRef.onSnapshot(function (snap) {
+      if (state.themeBusy) return;
+      state.theme = snap.exists ? snap.data() : null;
+      applySetting(state.theme);
+      renderSwatches();
+    }, function () {});
+
+    state.col = db.collection(COLLECTION);
+    state.col.onSnapshot(function (snap) {
+      state.items = snap.docs.filter(function (d) { return d.exists; }).map(normalise);
+      state.loaded = true;
+      render();
+    }, function (e) {
+      showNotice(e && e.code === "revoked" ? "This page lost access to your list. Reload to try again." : "Your list stopped updating. Reload the page to reconnect.");
+    });
+  }
+
+  boot();
+})();
+</script>
